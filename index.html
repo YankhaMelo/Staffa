@@ -1350,8 +1350,11 @@ async function loadGyms() {
   loadingEl.style.display = 'flex';
   selectorEl.innerHTML = '';
   try {
-    const { data, error } = await sb.from('gyms').select('id, name').order('name');
-    if (error) throw error;
+    // Add timeout of 10 seconds
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout — servidor demorou demasiado')), 10000));
+    const query = sb.from('gyms').select('id, name').order('name');
+    const { data, error } = await Promise.race([query, timeout]);
+    if (error) throw new Error(error.message || JSON.stringify(error));
     loadingEl.style.display = 'none';
     if (!data || data.length === 0) {
       selectorEl.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:16px">Nenhum ginásio encontrado.</div>';
@@ -1364,7 +1367,7 @@ async function loadGyms() {
       </button>`).join('');
   } catch(e) {
     loadingEl.style.display = 'none';
-    selectorEl.innerHTML = '<div style="color:var(--danger);font-size:.82rem;padding:16px;font-family:\'DM Mono\',monospace">Erro: ' + (e.message||JSON.stringify(e)) + '</div>';
+    selectorEl.innerHTML = '<div style="color:var(--danger);font-size:.82rem;padding:16px;font-family:\'DM Mono\',monospace">Erro: ' + (e.message||'Falha na ligação') + '</div>';
   }
 }
 
