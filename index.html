@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Staffa — Gestão de Equipa</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
@@ -1328,11 +1327,48 @@ let dashCharts = {};
 // ══════════════════════════════════════════════════
 let selectedGymId = null;
 
+// ══════════════════════════════════════════════════
+// SUPABASE FETCH WRAPPER
+// Uses apikey in URL to avoid CORS preflight issues
+// ══════════════════════════════════════════════════
+class SBQ {
+  constructor(url, key) {
+    this._url = url; this._key = key;
+    this._filters = []; this._sel = '*';
+    this._method = 'GET'; this._body = null;
+    this._single = false;
+  }
+  select(s) { this._sel = s; return this; }
+  eq(col, val) { this._filters.push(col + '=eq.' + encodeURIComponent(val)); return this; }
+  order(col) { this._filters.push('order=' + col + '.asc'); return this; }
+  single() { this._single = true; return this; }
+  insert(data) { this._method = 'POST'; this._body = JSON.stringify(Array.isArray(data)?data:[data]); return this; }
+  update(data) { this._method = 'PATCH'; this._body = JSON.stringify(data); return this; }
+  delete() { this._method = 'DELETE'; return this; }
+  upsert(data) { this._method = 'POST'; this._body = JSON.stringify(Array.isArray(data)?data:[data]); this._upsert = true; return this; }
+
+  async then(resolve) {
+    try {
+      let url = this._url + '?apikey=' + this._key + '&select=' + this._sel;
+      this._filters.forEach(f => { url += '&' + f; });
+      const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + this._key };
+      if (this._single) headers['Accept'] = 'application/vnd.pgrst.object+json';
+      if (this._method === 'POST') headers['Prefer'] = this._upsert ? 'resolution=merge-duplicates,return=representation' : 'return=representation';
+      if (this._method === 'PATCH') headers['Prefer'] = 'return=representation';
+      const res = await fetch(url, { method: this._method, headers, body: this._body || undefined });
+      if (this._method === 'DELETE' || (this._method === 'PATCH' && !this._upsert)) { resolve({ data: null, error: null }); return; }
+      if (!res.ok) { const e = await res.json().catch(() => ({message: res.statusText})); resolve({ data: null, error: e }); return; }
+      const text = await res.text();
+      resolve({ data: text ? JSON.parse(text) : null, error: null });
+    } catch(e) {
+      resolve({ data: null, error: { message: e.message } });
+    }
+  }
+}
+
 async function initApp() {
-  // Initialize Supabase client here to ensure library is loaded
-  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
-  });
+  sb = { from(table) { return new SBQ(SUPABASE_URL + '/rest/v1/' + table, SUPABASE_ANON); } };
+
   // Check if already logged in this session
   const savedGym = sessionStorage.getItem('staffa_gym');
   if (savedGym) {
@@ -1351,21 +1387,13 @@ async function loadGyms() {
   selectorEl.innerHTML = '';
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10000);
+  const timer = setTimeout(() => controller.abort(), 15000);
 
   try {
-    const res = await fetch(
-      SUPABASE_URL + '/rest/v1/gyms?select=id,name&order=name.asc',
-      {
-        signal: controller.signal,
-        headers: {
-          'apikey': SUPABASE_ANON,
-          'Authorization': 'Bearer ' + SUPABASE_ANON
-        }
-      }
-    );
+    const url = SUPABASE_URL + '/rest/v1/gyms?select=id,name&order=name.asc&apikey=' + SUPABASE_ANON;
+    const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timer);
-    if (!res.ok) throw new Error('HTTP ' + res.status + ' — ' + res.statusText);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     loadingEl.style.display = 'none';
     if (!data || data.length === 0) {
@@ -1380,7 +1408,7 @@ async function loadGyms() {
   } catch(e) {
     clearTimeout(timer);
     loadingEl.style.display = 'none';
-    const msg = e.name === 'AbortError' ? 'Timeout — sem resposta do servidor' : (e.message || 'Erro desconhecido');
+    const msg = e.name === 'AbortError' ? 'Timeout — sem resposta' : (e.message || 'Erro de ligação');
     selectorEl.innerHTML = '<div style="color:var(--danger);font-size:.82rem;padding:16px;font-family:\'DM Mono\',monospace">Erro: ' + msg + '</div>';
   }
 }
