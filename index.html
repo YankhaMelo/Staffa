@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Staffa — Gestão de Equipa</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
@@ -1275,7 +1274,67 @@ tr:hover td { background:#141414; }
 // ══════════════════════════════════════════════════
 const SUPABASE_URL = 'https://yvojeokuxbsrnrjgyznun.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2b2plb2t1eGJzcm5yamd5enVuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Mzc5NjEsImV4cCI6MjA5MDUxMzk2MX0.PL7twQw6v-XiQqhpiGS7kvBUMydpznoZEJS1SxULPwA';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Direct REST API wrapper — bypasses Supabase JS client CORS issues
+const sb = {
+  _headers: {
+    'apikey': SUPABASE_KEY,
+    'Authorization': 'Bearer ' + SUPABASE_KEY,
+    'Content-Type': 'application/json',
+    'Prefer': 'return=representation'
+  },
+  from(table) {
+    return new SBQuery(table, this._headers);
+  }
+};
+
+class SBQuery {
+  constructor(table, headers) {
+    this.table = table;
+    this.headers = headers;
+    this._filters = [];
+    this._order = null;
+    this._single = false;
+    this._select = '*';
+    this._method = 'GET';
+    this._body = null;
+    this._update = false;
+    this._delete = false;
+    this._upsert = false;
+  }
+  select(cols) { this._select = cols; return this; }
+  eq(col, val) { this._filters.push(`${col}=eq.${encodeURIComponent(val)}`); return this; }
+  order(col, opts) { this._order = `${col}.${opts?.ascending===false?'desc':'asc'}`; return this; }
+  single() { this._single = true; return this; }
+  insert(data) { this._method='POST'; this._body=JSON.stringify(Array.isArray(data)?data:[data]); return this; }
+  update(data) { this._method='PATCH'; this._update=true; this._body=JSON.stringify(data); return this; }
+  delete() { this._method='DELETE'; this._delete=true; return this; }
+
+  async then(resolve, reject) {
+    try {
+      let url = `${SUPABASE_URL}/rest/v1/${this.table}?select=${this._select}`;
+      if (this._filters.length) url += '&' + this._filters.join('&');
+      if (this._order) url += `&order=${this._order}`;
+      const headers = {...this.headers};
+      if (this._single) headers['Accept'] = 'application/vnd.pgrst.object+json';
+      if (this._upsert) headers['Prefer'] = 'resolution=merge-duplicates,return=representation';
+      const res = await fetch(url, { method: this._method, headers, body: this._body||undefined, mode: 'cors' });
+      if (!res.ok) {
+        const err = await res.json().catch(()=>({message: res.statusText}));
+        resolve({ data: null, error: err });
+        return;
+      }
+      if (this._method==='DELETE' || (this._method==='PATCH' && !headers['Prefer']?.includes('return'))) {
+        resolve({ data: null, error: null }); return;
+      }
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : null;
+      resolve({ data, error: null });
+    } catch(e) {
+      resolve({ data: null, error: { message: e.message } });
+    }
+  }
+};
 
 // ══════════════════════════════════════════════════
 // DATA & CONSTANTS
