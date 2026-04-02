@@ -1275,14 +1275,7 @@ tr:hover td { background:#141414; }
 // ══════════════════════════════════════════════════
 const SUPABASE_URL = 'https://yvojeokuxbsrnrjgyznun.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2b2plb2t1eGJzcm5yamd5enVuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Mzc5NjEsImV4cCI6MjA5MDUxMzk2MX0.PL7twQw6v-XiQqhpiGS7kvBUMydpznoZEJS1SxULPwA';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-    detectSessionInUrl: false,
-    storageKey: 'staffa-auth'
-  }
-});
+let sb = null;
 
 // ══════════════════════════════════════════════════
 // DATA & CONSTANTS
@@ -1336,6 +1329,10 @@ let dashCharts = {};
 let selectedGymId = null;
 
 async function initApp() {
+  // Initialize Supabase client here to ensure library is loaded
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+  });
   // Check if already logged in this session
   const savedGym = sessionStorage.getItem('staffa_gym');
   if (savedGym) {
@@ -4277,7 +4274,9 @@ function exportAvaliacaoPDF(avalId){
 // ══════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════
-initApp();
+window.addEventListener('load', function() {
+  initApp();
+});
 </script>
 </body>
 </html>
