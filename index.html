@@ -2165,12 +2165,12 @@ function confirmRegisto() {
   const subCoach = subCoachId ? coaches.find(c => c.id === subCoachId) : null;
 
   if (!isIn) {
-    records.push({ id:'r'+Date.now(), coachId:activeCoachId, date:today, entry:now, exit:null, tipo: tipoRegisto, subCoachId: subCoachId || null });
+    records.push({ id:crypto.randomUUID(), coachId:activeCoachId, date:today, entry:now, exit:null, tipo: tipoRegisto, subCoachId: subCoachId || null });
     if (tipoRegisto === 'substituicao' && subCoachId) {
       const jaTemFalta = faltas.find(f => f.coachId === subCoachId && f.date === today);
       if (!jaTemFalta) {
         const substitutoName = coaches.find(c => c.id === activeCoachId)?.name || '?';
-        faltas.push({ id:'f'+Date.now(), coachId:subCoachId, date:today, tipo:'justificada', obs:'Substituido por '+substitutoName+' (auto)', auto:true });
+        faltas.push({ id:crypto.randomUUID(), coachId:subCoachId, date:today, tipo:'justificada', obs:'Substituido por '+substitutoName+' (auto)', auto:true });
       }
     }
     resultDiv.className = 'scan-result entrada';
@@ -2900,7 +2900,7 @@ async function addManualRecord() {
   const entryT = document.getElementById('fix-entry').value;
   const exitT = document.getElementById('fix-exit').value;
   if (!coachId||!date||!entryT) { alert('Preencha pelo menos a entrada.'); return; }
-  const rec = { id:'r'+Date.now(), coachId, date, entry:new Date(date+'T'+entryT+':00').toISOString(), exit:exitT?new Date(date+'T'+exitT+':00').toISOString():null, tipo:'normal', subCoachId:null };
+  const rec = { id:crypto.randomUUID(), coachId, date, entry:new Date(date+'T'+entryT+':00').toISOString(), exit:exitT?new Date(date+'T'+exitT+':00').toISOString():null, tipo:'normal', subCoachId:null };
   records.push(rec);
   await saveRecord(rec);
   document.getElementById('fix-entry').value=''; document.getElementById('fix-exit').value='';
@@ -2931,7 +2931,7 @@ async function addFalta() {
   const tipo = document.getElementById('falta-tipo').value;
   const obs = document.getElementById('falta-obs').value.trim();
   if (!coachId||!date) { alert('Selecione o colaborador e a data.'); return; }
-  const falta = { id:'f'+Date.now(), coachId, date, tipo, obs };
+  const falta = { id:crypto.randomUUID(), coachId, date, tipo, obs };
   if (tipo==='ferias') {
     falta.feriasFim = document.getElementById('falta-ferias-fim').value;
     falta.feriasInicio = document.getElementById('falta-ferias-inicio').value;
@@ -3009,7 +3009,7 @@ async function saveFerias() {
   const editId = document.getElementById('fer-edit-id').value;
   if (!coachId||!inicio||!fim) { alert('Preencha todos os campos obrigatórios.'); return; }
   if (fim < inicio) { alert('A data de fim deve ser posterior ao início.'); return; }
-  const entry = { id: editId||'fer'+Date.now(), coachId, tipo, inicio, fim, notas };
+  const entry = { id: editId||crypto.randomUUID(), coachId, tipo, inicio, fim, notas };
   const result = await saveFeriasDB(entry);
   if (result && result.error) {
     alert('Erro ao guardar: ' + (result.error.message || JSON.stringify(result.error)));
@@ -3343,7 +3343,7 @@ async function saveGrupo() {
   const inicio = document.getElementById('grupo-inicio').value;
   if (!inicio) { alert('Define a semana de início.'); return; }
   const grupo = {
-    id: document.getElementById('grupo-edit-id').value||'g'+Date.now(), nome,
+    id: document.getElementById('grupo-edit-id').value||crypto.randomUUID(), nome,
     coaches:selectedCoaches, primeiro, inicio,
     sabado:{entrada:document.getElementById('grupo-sab-entrada').value,saida:document.getElementById('grupo-sab-saida').value},
     domingo:{t1:{entrada:document.getElementById('grupo-dom-e1').value,saida:document.getElementById('grupo-dom-s1').value},t2:{entrada:document.getElementById('grupo-dom-e2').value,saida:document.getElementById('grupo-dom-s2').value}}
@@ -3938,7 +3938,7 @@ async function saveEvento() {
   const editId = document.getElementById('ev-edit-id').value;
   if (!nome) { alert('Indica o nome do evento.'); return; }
   if (!data || !inicio) { alert('Indica a data e hora de início.'); return; }
-  const entry = { id: editId||'ev'+Date.now(), nome, data, inicio, fim, receita, despesas };
+  const entry = { id: editId||crypto.randomUUID(), nome, data, inicio, fim, receita, despesas };
   await saveEventoDB(entry);
   if (editId) {
     const idx = eventos.findIndex(e=>e.id===editId);
@@ -4262,7 +4262,7 @@ async function saveAvaliacao(){
   const avaliador=document.getElementById('aval-avaliador').value.trim();
   if(!avaliador){alert('Indica o nome do avaliador.');return;}
   const score=calcAvalScore();
-  const a={id:'aval'+Date.now(),coachId:currentAvalCoachId,avaliador,tipoAula:document.getElementById('aval-tipo-aula').value,nAlunos:parseInt(document.getElementById('aval-n-alunos').value)||0,trainee:document.getElementById('aval-trainee').value.trim(),feedbackDt:document.getElementById('aval-feedback-dt').value,data:new Date().toISOString(),score,sections:JSON.parse(JSON.stringify(AVAL_STATE))};
+  const a={id:crypto.randomUUID(),coachId:currentAvalCoachId,avaliador,tipoAula:document.getElementById('aval-tipo-aula').value,nAlunos:parseInt(document.getElementById('aval-n-alunos').value)||0,trainee:document.getElementById('aval-trainee').value.trim(),feedbackDt:document.getElementById('aval-feedback-dt').value,data:new Date().toISOString(),score,sections:JSON.parse(JSON.stringify(AVAL_STATE))};
   avaliacoes.push(a);
   await saveAvaliacaoDB(a);
   alert('✅ Avaliação guardada! Score: '+score+'%');
