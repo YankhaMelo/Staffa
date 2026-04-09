@@ -3358,7 +3358,7 @@ async function toggleGrupoCoach(id, el) {
   }
 }
 
-function saveGrupo() {
+async function saveGrupo() {
   const nome = document.getElementById('grupo-nome').value.trim();
   if (!nome) { alert('Insere o nome do grupo.'); return; }
   const selectedCoaches = [...document.querySelectorAll('#grupo-coaches-list [data-id]')]
