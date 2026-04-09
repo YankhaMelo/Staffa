@@ -930,12 +930,13 @@ tr:hover td { background:#141414; }
 
 <!-- MODAL: PERFIL -->
 <div class="modal-overlay" id="profile-modal">
-  <div class="modal modal-wide">
+  <div class="modal modal-wide" style="max-height:90vh;overflow-y:auto">
     <button class="modal-close" onclick="closeModal('profile-modal')">✕</button>
     <div class="profile-header">
-      <div class="profile-avatar" id="profile-avatar"></div>
+      <div class="profile-avatar" id="profile-avatar" style="overflow:hidden;flex-shrink:0"></div>
       <div class="profile-info"><h2 id="profile-name"></h2><span id="profile-role"></span></div>
     </div>
+    <div id="profile-extra" style="margin-bottom:16px"></div>
     <div class="profile-stats">
       <div class="profile-stat"><div class="ps-label">Horas Hoje</div><div class="ps-value yellow" id="profile-today-h">0h00m</div></div>
       <div class="profile-stat"><div class="ps-label">Turnos Hoje</div><div class="ps-value" id="profile-today-s">0</div></div>
@@ -1142,14 +1143,28 @@ tr:hover td { background:#141414; }
 
 <!-- MODAL: ADICIONAR COACH -->
 <div class="modal-overlay" id="add-modal">
-  <div class="modal">
+  <div class="modal modal-wide" style="max-height:90vh;overflow-y:auto;text-align:left">
     <button class="modal-close" onclick="closeModal('add-modal')">✕</button>
     <h2>Novo Colaborador</h2>
     <p>Preencha os dados para adicionar à equipa</p>
+
+    <!-- Foto -->
+    <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:20px">
+      <div id="new-foto-preview" onclick="document.getElementById('new-foto-input').click()" style="width:80px;height:80px;border-radius:50%;background:var(--accent);color:#000;font-family:'Barlow Condensed',sans-serif;font-size:1.8rem;font-weight:900;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;flex-shrink:0;border:3px solid var(--border)">📷</div>
+      <input type="file" id="new-foto-input" accept="image/*" style="display:none" onchange="previewFoto(this)">
+      <input type="hidden" id="new-foto-url">
+      <span style="font-size:.72rem;color:var(--muted);margin-top:6px;font-family:'DM Mono',monospace">Toca para adicionar foto</span>
+    </div>
+
     <div class="form-group"><label>Nome Completo</label><input type="text" id="new-name" placeholder="Ex: João Silva"></div>
     <div class="form-group"><label>Função</label><input type="text" id="new-role" placeholder="Ex: CrossFit Coach"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div class="form-group"><label>Horas semanais</label><input type="number" id="new-horas" placeholder="Ex: 40" min="1" max="80" style="font-family:'DM Mono',monospace"></div>
+      <div class="form-group"><label>Idade</label><input type="number" id="new-idade" placeholder="Ex: 28" min="16" max="80" style="font-family:'DM Mono',monospace"></div>
+      <div class="form-group"><label>Telefone</label><input type="tel" id="new-telefone" placeholder="Ex: 912345678" style="font-family:'DM Mono',monospace"></div>
+    </div>
+    <div class="form-group"><label>Bio / Notas</label><textarea id="new-bio" rows="2" placeholder="Ex: Especialista em Weightlifting..." style="resize:vertical"></textarea></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label>Horas semanais</label><input type="number" id="new-horas" placeholder="Auto" min="1" max="80" style="font-family:'DM Mono',monospace"></div>
       <div class="form-group"><label>Valor / hora (€)</label><input type="number" id="new-valor" placeholder="Ex: 12.50" min="0" step="0.01" style="font-family:'DM Mono',monospace"></div>
     </div>
     <div class="form-group"><label>Data de Aniversário (opcional)</label><input type="date" id="new-aniv"></div>
@@ -1597,7 +1612,9 @@ async function loadAllData() {
     coaches = (coachesRes.data||[]).map(c => ({
       id: c.id, name: c.name, role: c.role,
       aniv: c.aniv, horasSemana: c.horas_semana,
-      valorHora: c.valor_hora
+      valorHora: c.valor_hora,
+      foto: c.foto||null, bio: c.bio||null,
+      telefone: c.telefone||null, idade: c.idade||null
     }));
 
     records = (recordsRes.data||[]).map(r => ({
@@ -1681,7 +1698,11 @@ async function saveCoach(coach, isNew) {
     name: coach.name, role: coach.role,
     aniv: coach.aniv||null,
     horas_semana: coach.horasSemana||null,
-    valor_hora: coach.valorHora||null
+    valor_hora: coach.valorHora||null,
+    foto: coach.foto||null,
+    bio: coach.bio||null,
+    telefone: coach.telefone||null,
+    idade: coach.idade||null
   };
   const { error } = isNew
     ? await sb.from('coaches').insert(row)
@@ -1777,13 +1798,13 @@ async function saveEventoDB(ev) {
     id: ev.id, gym_id: GYM_ID,
     nome: ev.nome, data: ev.data,
     inicio: ev.inicio, fim: ev.fim||null,
-    receita: ev.receita||null, despesas: ev.despesas||null
+    receita: ev.receita||0, despesas: ev.despesas||0
   };
   const existing = await sb.from('eventos').select('id').eq('id', ev.id).single();
   if (existing.data) {
-    await sb.from('eventos').update(row).eq('id', ev.id);
+    return await sb.from('eventos').update(row).eq('id', ev.id);
   } else {
-    await sb.from('eventos').insert(row);
+    return await sb.from('eventos').insert(row);
   }
 }
 
@@ -2106,8 +2127,11 @@ function renderGrid() {
   }
   grid.innerHTML = coaches.map(c => {
     const isIn = getStatus(c.id) === 'in';
+    const avatarContent = c.foto
+      ? `<img src="${c.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+      : initials(c.name);
     return `<div class="coach-card ${isIn?'is-in':''}">
-      <div class="coach-avatar" onclick="openProfile('${c.id}')">${initials(c.name)}</div>
+      <div class="coach-avatar" onclick="openProfile('${c.id}')" style="${c.foto?'background:transparent;':''}">${avatarContent}</div>
       <div class="coach-name" onclick="openProfile('${c.id}')">${c.name}</div>
       <div class="coach-role">${c.role}</div>
       <div class="coach-status ${isIn?'status-in':'status-out'}">${isIn?'● Presente':'○ Ausente'}</div>
@@ -2587,13 +2611,40 @@ function openProfile(coachId) {
   monthRecs.forEach(r => { monthMs += calcMs(r.entry, r.exit); });
   const monthDays = [...new Set(monthRecs.map(r=>r.date))].length;
 
-  document.getElementById('profile-avatar').textContent = initials(coach.name);
+  // Avatar com foto ou iniciais
+  const avatarEl = document.getElementById('profile-avatar');
+  if (coach.foto) {
+    avatarEl.style.background = 'transparent';
+    avatarEl.innerHTML = `<img src="${coach.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+  } else {
+    avatarEl.style.background = '';
+    avatarEl.innerHTML = initials(coach.name);
+  }
+
   document.getElementById('profile-name').textContent = coach.name;
   document.getElementById('profile-role').textContent = coach.role;
   document.getElementById('profile-today-h').textContent = formatHours(todayMs);
   document.getElementById('profile-today-s').textContent = todayRecs.length;
   document.getElementById('profile-month-h').textContent = formatHours(monthMs);
   document.getElementById('profile-month-d').textContent = monthDays;
+
+  // Info extra — público vê idade/bio, admin vê tudo
+  const extraEl = document.getElementById('profile-extra');
+  if (extraEl) {
+    let extraHtml = '';
+    // Público: idade e bio
+    if (coach.idade) extraHtml += `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:.72rem;color:var(--muted);font-family:'DM Mono',monospace;width:80px">IDADE</span><span style="font-size:.9rem">${coach.idade} anos</span></div>`;
+    if (coach.bio) extraHtml += `<div style="padding:8px 0;border-bottom:1px solid var(--border)"><div style="font-size:.72rem;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:4px">BIO</div><div style="font-size:.88rem;line-height:1.5;color:var(--text)">${coach.bio}</div></div>`;
+    // Admin: telefone, aniversário, horas contrato, valor hora
+    if (adminUnlocked) {
+      if (coach.telefone) extraHtml += `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:.72rem;color:var(--muted);font-family:'DM Mono',monospace;width:80px">TELEFONE</span><span style="font-size:.9rem;font-family:'DM Mono',monospace">${coach.telefone}</span></div>`;
+      if (coach.aniv) extraHtml += `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:.72rem;color:var(--muted);font-family:'DM Mono',monospace;width:80px">ANIVERSÁRIO</span><span style="font-size:.9rem;font-family:'DM Mono',monospace">${new Date(coach.aniv+'T12:00:00').toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'})}</span></div>`;
+      if (coach.horasSemana) extraHtml += `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:.72rem;color:var(--muted);font-family:'DM Mono',monospace;width:80px">CONTRATO</span><span style="font-size:.9rem;font-family:'DM Mono',monospace">${coach.horasSemana}h/semana</span></div>`;
+      if (coach.valorHora) extraHtml += `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:.72rem;color:var(--muted);font-family:'DM Mono',monospace;width:80px">VALOR/HORA</span><span style="font-size:.9rem;font-family:'DM Mono',monospace">${coach.valorHora}€</span></div>`;
+      extraHtml += `<button class="btn-add" style="width:100%;margin-top:12px;font-size:.82rem" onclick="closeModal('profile-modal');openEditCoach('${coach.id}')">✏️ Editar Perfil</button>`;
+    }
+    extraEl.innerHTML = extraHtml;
+  }
 
   const byDay = {};
   monthRecs.forEach(r => { if (!byDay[r.date]) byDay[r.date]=[]; byDay[r.date].push(r); });
@@ -2806,18 +2857,63 @@ function exportPDF(coach, byDay, totalMs, normalMs, subMs, days, monthLabel, sig
 // ══════════════════════════════════════════════════
 // COACH CRUD
 // ══════════════════════════════════════════════════
+function previewFoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('new-foto-url').value = e.target.result;
+    const preview = document.getElementById('new-foto-preview');
+    preview.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover">`;
+  };
+  reader.readAsDataURL(file);
+}
+
+function calcAutoHoras() {
+  // Calculate total weekly hours from horarios
+  const editId = document.getElementById('new-edit-id').value;
+  if (!editId) return;
+  const h = horarios[editId];
+  if (!h || !h.dias) return;
+  let totalMins = 0;
+  Object.values(h.dias).forEach(dia => {
+    if (!dia.ativo) return;
+    if (dia.manha?.entrada && dia.manha?.saida) {
+      const [eh,em] = dia.manha.entrada.split(':').map(Number);
+      const [sh,sm] = dia.manha.saida.split(':').map(Number);
+      totalMins += (sh*60+sm) - (eh*60+em);
+    }
+    if (dia.tarde?.ativo && dia.tarde?.entrada && dia.tarde?.saida) {
+      const [eh,em] = dia.tarde.entrada.split(':').map(Number);
+      const [sh,sm] = dia.tarde.saida.split(':').map(Number);
+      totalMins += (sh*60+sm) - (eh*60+em);
+    }
+  });
+  if (totalMins > 0) {
+    const horasField = document.getElementById('new-horas');
+    if (!horasField.dataset.edited) horasField.value = (totalMins/60).toFixed(1);
+  }
+}
+
 function openAddCoach() {
   document.getElementById('new-name').value='';
   document.getElementById('new-role').value='';
   document.getElementById('new-aniv').value='';
   document.getElementById('new-horas').value='';
+  document.getElementById('new-horas').dataset.edited='';
   document.getElementById('new-valor').value='';
+  document.getElementById('new-idade').value='';
+  document.getElementById('new-telefone').value='';
+  document.getElementById('new-bio').value='';
+  document.getElementById('new-foto-url').value='';
+  document.getElementById('new-foto-preview').innerHTML='📷';
   document.getElementById('new-edit-id').value='';
   document.getElementById('add-modal').querySelector('h2').textContent='Novo Colaborador';
   document.getElementById('add-modal').querySelector('p').textContent='Preencha os dados para adicionar à equipa';
   document.getElementById('add-modal-btn').textContent='Adicionar';
   document.getElementById('add-modal').classList.add('open');
 }
+
 function openEditCoach(id) {
   const c = coaches.find(x=>x.id===id);
   if (!c) return;
@@ -2825,22 +2921,41 @@ function openEditCoach(id) {
   document.getElementById('new-role').value=c.role;
   document.getElementById('new-aniv').value=c.aniv||'';
   document.getElementById('new-horas').value=c.horasSemana||'';
+  document.getElementById('new-horas').dataset.edited = c.horasSemana ? '1' : '';
   document.getElementById('new-valor').value=c.valorHora||'';
+  document.getElementById('new-idade').value=c.idade||'';
+  document.getElementById('new-telefone').value=c.telefone||'';
+  document.getElementById('new-bio').value=c.bio||'';
+  document.getElementById('new-foto-url').value=c.foto||'';
+  const preview = document.getElementById('new-foto-preview');
+  if (c.foto) {
+    preview.innerHTML = `<img src="${c.foto}" style="width:100%;height:100%;object-fit:cover">`;
+  } else {
+    preview.innerHTML = initials(c.name);
+    preview.style.fontSize='1.8rem';
+  }
   document.getElementById('new-edit-id').value=id;
   document.getElementById('add-modal').querySelector('h2').textContent='Editar Colaborador';
   document.getElementById('add-modal').querySelector('p').textContent='Atualize os dados do colaborador';
   document.getElementById('add-modal-btn').textContent='Guardar Alterações';
   document.getElementById('add-modal').classList.add('open');
+  // Auto calc horas from horarios
+  setTimeout(calcAutoHoras, 100);
 }
+
 async function addCoach() {
   const name = document.getElementById('new-name').value.trim();
   const role = document.getElementById('new-role').value.trim();
   const aniv = document.getElementById('new-aniv').value;
   const horasSemana = parseFloat(document.getElementById('new-horas').value)||null;
   const valorHora = parseFloat(document.getElementById('new-valor').value)||null;
+  const idade = parseInt(document.getElementById('new-idade').value)||null;
+  const telefone = document.getElementById('new-telefone').value.trim()||null;
+  const bio = document.getElementById('new-bio').value.trim()||null;
+  const foto = document.getElementById('new-foto-url').value||null;
   const editId = document.getElementById('new-edit-id').value;
   if (!name) { alert('Insira o nome.'); return; }
-  const coach = { id: editId||'c'+Date.now(), name, role:role||'Coach', aniv:aniv||null, horasSemana, valorHora };
+  const coach = { id: editId||crypto.randomUUID(), name, role:role||'Coach', aniv:aniv||null, horasSemana, valorHora, idade, telefone, bio, foto };
   const ok = await saveCoach(coach, !editId);
   if (!ok) return;
   if (editId) {
@@ -3212,37 +3327,57 @@ function openHorarioModal(coachId) {
     const dia = h&&h.dias&&h.dias[key] ? h.dias[key] : {ativo:false,manha:{entrada:'',saida:''},tarde:{ativo:false,entrada:'',saida:''}};
     const manha = dia.manha||{entrada:dia.entrada||'',saida:dia.saida||''};
     const tarde = dia.tarde||{ativo:false,entrada:'',saida:''};
-    const op = dia.ativo?1:0.4;
-    return `<tr style="border-bottom:1px solid var(--border)">
-      <td style="padding:10px 12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;font-size:.9rem;vertical-align:top;padding-top:14px">${DIAS_SEMANA[i]}</td>
-      <td style="padding:10px 12px;text-align:center;vertical-align:top;padding-top:14px">
-        <input type="checkbox" id="dia-ativo-${key}" ${dia.ativo?'checked':''} onchange="toggleDiaRow('${key}')" style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer">
-      </td>
-      <td style="padding:6px 12px">
-        <div style="font-size:.68rem;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:4px">MANHÃ</div>
-        <div style="display:flex;gap:6px;align-items:center">
-          <input type="time" id="dia-manha-entrada-${key}" value="${manha.entrada}" ${!dia.ativo?'disabled':''} style="padding:6px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'DM Mono',monospace;font-size:.82rem;outline:none;opacity:${op}">
-          <span style="color:var(--muted);font-size:.8rem">→</span>
-          <input type="time" id="dia-manha-saida-${key}" value="${manha.saida}" ${!dia.ativo?'disabled':''} style="padding:6px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'DM Mono',monospace;font-size:.82rem;outline:none;opacity:${op}">
+    return `<tr><td colspan="3" style="padding:5px 0">
+      <div id="dia-card-${key}" style="background:var(--surface2);border:2px solid ${dia.ativo?'var(--accent)':'var(--border)'};border-radius:10px;padding:14px;transition:all .15s">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${dia.ativo?'14px':'0'}">
+          <span style="font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1.05rem;text-transform:uppercase">${DIAS_SEMANA[i]}</span>
+          <div onclick="toggleDiaCard('${key}')" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <span id="dia-label-${key}" style="font-size:.7rem;font-family:'DM Mono',monospace;color:${dia.ativo?'var(--accent)':'var(--muted)'}">${dia.ativo?'ATIVO':'INATIVO'}</span>
+            <div style="width:46px;height:26px;border-radius:13px;background:${dia.ativo?'var(--accent)':'var(--border)'};position:relative;transition:background .15s" id="dia-toggle-bg-${key}">
+              <div style="width:20px;height:20px;border-radius:50%;background:#000;position:absolute;top:3px;${dia.ativo?'right:3px':'left:3px'};transition:all .15s" id="dia-toggle-dot-${key}"></div>
+            </div>
+          </div>
+          <input type="checkbox" id="dia-ativo-${key}" ${dia.ativo?'checked':''} onchange="toggleDiaRow('${key}')" style="display:none">
         </div>
-        <div style="margin-top:8px">
-          <label style="display:flex;align-items:center;gap:6px;font-size:.75rem;color:var(--muted);cursor:pointer">
-            <input type="checkbox" id="dia-tarde-ativo-${key}" ${tarde.ativo?'checked':''} ${!dia.ativo?'disabled':''} onchange="toggleTarde('${key}')" style="accent-color:var(--accent)">
-            Tem turno da tarde
+        <div id="dia-fields-${key}" style="display:${dia.ativo?'block':'none'}">
+          <div style="font-size:.68rem;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:6px;letter-spacing:.06em">MANHÃ</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+            <input type="time" id="dia-manha-entrada-${key}" value="${manha.entrada}" style="flex:1;padding:9px;background:var(--surface);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:'DM Mono',monospace;font-size:.88rem;outline:none">
+            <span style="color:var(--muted)">→</span>
+            <input type="time" id="dia-manha-saida-${key}" value="${manha.saida}" style="flex:1;padding:9px;background:var(--surface);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:'DM Mono',monospace;font-size:.88rem;outline:none">
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:10px">
+            <input type="checkbox" id="dia-tarde-ativo-${key}" ${tarde.ativo?'checked':''} onchange="toggleTarde('${key}')" style="accent-color:var(--accent);width:18px;height:18px">
+            <span style="font-size:.82rem;color:var(--muted)">Tem turno da tarde</span>
           </label>
-        </div>
-        <div id="tarde-row-${key}" style="margin-top:6px;display:${tarde.ativo&&dia.ativo?'block':'none'}">
-          <div style="font-size:.68rem;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:4px">TARDE</div>
-          <div style="display:flex;gap:6px;align-items:center">
-            <input type="time" id="dia-tarde-entrada-${key}" value="${tarde.entrada}" ${!dia.ativo||!tarde.ativo?'disabled':''} style="padding:6px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'DM Mono',monospace;font-size:.82rem;outline:none;">
-            <span style="color:var(--muted);font-size:.8rem">→</span>
-            <input type="time" id="dia-tarde-saida-${key}" value="${tarde.saida}" ${!dia.ativo||!tarde.ativo?'disabled':''} style="padding:6px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'DM Mono',monospace;font-size:.82rem;outline:none;">
+          <div id="tarde-row-${key}" style="display:${tarde.ativo&&dia.ativo?'block':'none'}">
+            <div style="font-size:.68rem;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:6px;letter-spacing:.06em">TARDE</div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="time" id="dia-tarde-entrada-${key}" value="${tarde.entrada}" style="flex:1;padding:9px;background:var(--surface);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:'DM Mono',monospace;font-size:.88rem;outline:none">
+              <span style="color:var(--muted)">→</span>
+              <input type="time" id="dia-tarde-saida-${key}" value="${tarde.saida}" style="flex:1;padding:9px;background:var(--surface);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:'DM Mono',monospace;font-size:.88rem;outline:none">
+            </div>
           </div>
         </div>
-      </td>
-    </tr>`;
+      </div>
+    </td></tr>`;
   }).join('');
   document.getElementById('horario-modal').classList.add('open');
+}
+
+function toggleDiaCard(key) {
+  const cb = document.getElementById('dia-ativo-'+key);
+  cb.checked = !cb.checked;
+  cb.dispatchEvent(new Event('change'));
+  const ativo = cb.checked;
+  document.getElementById('dia-card-'+key).style.border = '2px solid '+(ativo?'var(--accent)':'var(--border)');
+  document.getElementById('dia-label-'+key).style.color = ativo?'var(--accent)':'var(--muted)';
+  document.getElementById('dia-label-'+key).textContent = ativo?'ATIVO':'INATIVO';
+  document.getElementById('dia-toggle-bg-'+key).style.background = ativo?'var(--accent)':'var(--border)';
+  document.getElementById('dia-toggle-dot-'+key).style.left = ativo?'':'3px';
+  document.getElementById('dia-toggle-dot-'+key).style.right = ativo?'3px':'';
+  document.getElementById('dia-fields-'+key).style.display = ativo?'block':'none';
+  document.getElementById('dia-card-'+key).style.marginBottom = ativo?'14px':'0';
 }
 
 function toggleDiaRow(key) {
@@ -3263,12 +3398,41 @@ async function saveHorario() {
   const coachId = document.getElementById('horario-coach-id').value;
   const tolerancia = parseInt(document.getElementById('horario-tolerancia').value)||15;
   const dias = {};
+  let totalMins = 0;
   for (const key of DIAS_KEY) {
     const ativo = document.getElementById('dia-ativo-'+key).checked;
-    dias[key] = { ativo, manha:{entrada:document.getElementById('dia-manha-entrada-'+key).value,saida:document.getElementById('dia-manha-saida-'+key).value}, tarde:{ativo:document.getElementById('dia-tarde-ativo-'+key).checked,entrada:document.getElementById('dia-tarde-entrada-'+key).value,saida:document.getElementById('dia-tarde-saida-'+key).value} };
+    const manhaEntrada = document.getElementById('dia-manha-entrada-'+key).value;
+    const manhaSaida = document.getElementById('dia-manha-saida-'+key).value;
+    const tardeAtivo = document.getElementById('dia-tarde-ativo-'+key).checked;
+    const tardeEntrada = document.getElementById('dia-tarde-entrada-'+key).value;
+    const tardeSaida = document.getElementById('dia-tarde-saida-'+key).value;
+    dias[key] = { ativo, manha:{entrada:manhaEntrada,saida:manhaSaida}, tarde:{ativo:tardeAtivo,entrada:tardeEntrada,saida:tardeSaida} };
+    if (ativo) {
+      if (manhaEntrada && manhaSaida) {
+        const [eh,em] = manhaEntrada.split(':').map(Number);
+        const [sh,sm] = manhaSaida.split(':').map(Number);
+        totalMins += (sh*60+sm) - (eh*60+em);
+      }
+      if (tardeAtivo && tardeEntrada && tardeSaida) {
+        const [eh,em] = tardeEntrada.split(':').map(Number);
+        const [sh,sm] = tardeSaida.split(':').map(Number);
+        totalMins += (sh*60+sm) - (eh*60+em);
+      }
+    }
   }
   horarios[coachId] = {dias, tolerancia};
   await saveHorarioDB(coachId, horarios[coachId]);
+
+  // Auto-update horas_semana on coach if not manually set
+  if (totalMins > 0) {
+    const coach = coaches.find(c => c.id === coachId);
+    if (coach) {
+      const autoHoras = parseFloat((totalMins/60).toFixed(1));
+      coach.horasSemana = autoHoras;
+      await saveCoach(coach, false);
+    }
+  }
+
   renderHorarios(); closeModal('horario-modal');
 }
 async function removeHorario(coachId) {
@@ -4003,13 +4167,14 @@ async function saveEvento() {
   const data = document.getElementById('ev-data').value;
   const inicio = document.getElementById('ev-inicio').value;
   const fim = document.getElementById('ev-fim').value;
-  const receita = parseFloat(document.getElementById('ev-receita').value)||null;
-  const despesas = parseFloat(document.getElementById('ev-despesas').value)||null;
+  const receita = parseFloat(document.getElementById('ev-receita').value)||0;
+  const despesas = parseFloat(document.getElementById('ev-despesas').value)||0;
   const editId = document.getElementById('ev-edit-id').value;
   if (!nome) { alert('Indica o nome do evento.'); return; }
   if (!data || !inicio) { alert('Indica a data e hora de início.'); return; }
   const entry = { id: editId||crypto.randomUUID(), nome, data, inicio, fim, receita, despesas };
-  await saveEventoDB(entry);
+  const result = await saveEventoDB(entry);
+  if (result && result.error) { alert('Erro ao guardar evento: '+(result.error.message||JSON.stringify(result.error))); return; }
   if (editId) {
     const idx = eventos.findIndex(e=>e.id===editId);
     if (idx>=0) eventos[idx]=entry; else eventos.push(entry);
@@ -4034,7 +4199,7 @@ async function picagemEvento(eventoId, coachId) {
     open.saida = now;
     await saveEvPresenca(open);
   } else {
-    const p = { id:'ep'+Date.now(), eventoId, coachId, entrada: now, saida: null };
+    const p = { id:crypto.randomUUID(), eventoId, coachId, entrada: now, saida: null };
     evPresencas.push(p);
     await saveEvPresenca(p);
   }
