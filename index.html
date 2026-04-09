@@ -1294,7 +1294,7 @@ tr:hover td { background:#141414; }
     <div class="form-group"><label>Nome do Grupo</label><input type="text" id="grupo-nome" placeholder="Ex: Grupo Fim de Semana"></div>
     <div class="form-group">
       <label>Coaches do Grupo</label>
-      <div id="grupo-coaches-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px"></div>
+      <div id="grupo-coaches-list" style="display:flex;flex-direction:column;gap:6px;margin-top:6px"></div>
     </div>
     <div class="form-group">
       <label>Horário Sábado</label>
@@ -3328,7 +3328,7 @@ function openGrupoModal(editId) {
   document.getElementById('grupo-dom-s2').value = g?(g.domingo?.t2?.saida||''):'';
   document.getElementById('grupo-inicio').value = g?g.inicio:todayStr();
   const list = document.getElementById('grupo-coaches-list');
-  list.innerHTML = coaches.map(c=>`<label style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;cursor:pointer;font-size:.88rem"><input type="checkbox" value="${c.id}" ${g&&g.coaches.includes(c.id)?'checked':''} style="accent-color:var(--accent)">${c.name}</label>`).join('');
+  list.innerHTML = coaches.map(c=>`<label style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;cursor:pointer;font-size:.9rem;width:100%;box-sizing:border-box"><input type="checkbox" value="${c.id}" ${g&&g.coaches.includes(c.id)?'checked':''} style="accent-color:var(--accent);width:20px;height:20px;flex-shrink:0;cursor:pointer">${c.name}</label>`).join('');
   const sel = document.getElementById('grupo-primeiro');
   sel.innerHTML = '<option value="">-- Quem começa --</option>'+coaches.map(c=>`<option value="${c.id}" ${g&&g.primeiro===c.id?'selected':''}>${c.name}</option>`).join('');
   document.getElementById('grupo-modal').classList.add('open');
