@@ -1384,6 +1384,8 @@ let notificacoes = [];
 let cfgNotif = {atraso:true, semSaida:true, ferias:true, aniv:false};
 let cfgEmpresa = {nome:'5.7CrossFit'};
 let gymHorario = {seg:{open:'06:00',close:'22:00',ativo:true},ter:{open:'06:00',close:'22:00',ativo:true},qua:{open:'06:00',close:'22:00',ativo:true},qui:{open:'06:00',close:'22:00',ativo:true},sex:{open:'06:00',close:'22:00',ativo:true},sab:{open:'09:00',close:'18:00',ativo:true},dom:{open:'09:00',close:'13:00',ativo:true}};
+let gymConfig = {};
+let escOverrides = {};
 
 let activeCoachId = null;
 let adminUnlocked = false;
@@ -1548,9 +1550,11 @@ async function loginWithGym(gym) {
   if (gym.config) {
     try {
       const cfg = typeof gym.config === 'string' ? JSON.parse(gym.config) : gym.config;
+      gymConfig = cfg;
       if (cfg.cfgNotif) cfgNotif = cfg.cfgNotif;
       if (cfg.gymHorario) gymHorario = cfg.gymHorario;
       if (cfg.avalPin) AVAL_PIN = cfg.avalPin;
+      if (cfg.escOverrides) escOverrides = cfg.escOverrides;
     } catch(e) {}
   }
 
@@ -3410,21 +3414,60 @@ function renderEscalonamento() {
   const weekends = [];
   const daysInMonth = new Date(escAno,escMes+1,0).getDate();
   for (let d=1;d<=daysInMonth;d++){const date=new Date(escAno,escMes,d);if(date.getDay()===6||date.getDay()===0)weekends.push(date);}
-  let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px">';
+  let html = '<div style="display:flex;flex-direction:column;gap:14px">';
   weekends.forEach(date => {
     const dow=date.getDay();
     const dowLabel=dow===6?'Sábado':'Domingo';
-    const dayStr=date.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'});
+    const dateStr=date.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'});
+    const dateKey=date.toISOString().split('T')[0];
     let grupoHtml=grupos.map(g => {
-      const coachId=getCoachEscalado(g.id,date);
+      const overrideKey = dateKey+'-'+g.id;
+      const override = escOverrides[overrideKey];
+      const autoCoachId=getCoachEscalado(g.id,date);
+      const coachId = override || autoCoachId;
       const coach=coaches.find(c=>c.id===coachId);
       const horario=dow===6?(g.sabado?.entrada&&g.sabado?.saida?g.sabado.entrada+' → '+g.sabado.saida:'–'):(g.domingo?.t1?.entrada?g.domingo.t1.entrada+' → '+g.domingo.t1.saida+(g.domingo.t2?.entrada?' / '+g.domingo.t2.entrada+' → '+g.domingo.t2.saida:''):'–');
-      return `<div style="margin-top:8px;padding:10px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)"><div style="font-size:.72rem;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:4px">${g.nome.toUpperCase()}</div><div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.05rem;color:var(--accent)">${coach?coach.name:'–'}</div><div style="font-size:.78rem;color:var(--muted);font-family:'DM Mono',monospace">${horario}</div></div>`;
+      const isOverride = !!override;
+      const coachOptions = g.coaches.map(id=>{const c=coaches.find(x=>x.id===id);return `<option value="${id}" ${id===coachId?'selected':''}>${c?c.name:'?'}</option>`;}).join('');
+      return `<div style="margin-top:8px;padding:10px;background:var(--surface2);border-radius:8px;border:1px solid ${isOverride?'var(--accent)':'var(--border)'}">
+        <div style="font-size:.72rem;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:6px">${g.nome.toUpperCase()}${isOverride?' <span style="color:var(--accent)">✏ EDITADO</span>':''}</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <select onchange="setEscOverride('${overrideKey}','${autoCoachId}',this.value)" style="flex:1;min-width:140px;padding:7px 10px;background:var(--surface);border:1px solid ${isOverride?'var(--accent)':'var(--border)'};border-radius:7px;color:${isOverride?'var(--accent)':'var(--text)'};font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.95rem;outline:none">
+            ${coachOptions}
+          </select>
+          ${isOverride?`<button onclick="clearEscOverride('${overrideKey}')" style="padding:6px 10px;background:none;border:1px solid var(--border);border-radius:7px;color:var(--muted);font-size:.75rem;cursor:pointer;white-space:nowrap">↩ Auto</button>`:''}
+        </div>
+        <div style="font-size:.75rem;color:var(--muted);font-family:'DM Mono',monospace;margin-top:4px">${horario}</div>
+      </div>`;
     }).join('');
-    html+=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px"><div style="font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1.1rem;text-transform:uppercase">${dowLabel}</div><div style="font-family:'DM Mono',monospace;font-size:.78rem;color:var(--muted)">${dayStr}</div>${grupoHtml}</div>`;
+    html+=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1.1rem;text-transform:uppercase">${dowLabel}</div>
+        <div style="font-family:'DM Mono',monospace;font-size:.78rem;color:var(--muted)">${dateStr}</div>
+      </div>
+      ${grupoHtml}
+    </div>`;
   });
   html+='</div>';
   cal.innerHTML=html;
+}
+
+function setEscOverride(key, autoId, newId) {
+  if (newId === autoId) { delete escOverrides[key]; }
+  else { escOverrides[key] = newId; }
+  saveEscOverrides();
+}
+
+function clearEscOverride(key) {
+  delete escOverrides[key];
+  saveEscOverrides();
+  renderEscalonamento();
+}
+
+async function saveEscOverrides() {
+  const config = { ...gymConfig, escOverrides };
+  await sb.from('gyms').update({ config: JSON.stringify(config) }).eq('id', GYM_ID);
+  renderEscalonamento();
 }
 
 // ══════════════════════════════════════════════════
