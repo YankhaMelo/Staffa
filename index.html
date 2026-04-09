@@ -1758,9 +1758,9 @@ async function saveFeriasDB(f) {
   };
   const existing = await sb.from('ferias_planeadas').select('id').eq('id', f.id).single();
   if (existing.data) {
-    await sb.from('ferias_planeadas').update(row).eq('id', f.id);
+    return await sb.from('ferias_planeadas').update(row).eq('id', f.id);
   } else {
-    await sb.from('ferias_planeadas').insert(row);
+    return await sb.from('ferias_planeadas').insert(row);
   }
 }
 
@@ -3010,7 +3010,11 @@ async function saveFerias() {
   if (!coachId||!inicio||!fim) { alert('Preencha todos os campos obrigatórios.'); return; }
   if (fim < inicio) { alert('A data de fim deve ser posterior ao início.'); return; }
   const entry = { id: editId||'fer'+Date.now(), coachId, tipo, inicio, fim, notas };
-  await saveFeriasDB(entry);
+  const result = await saveFeriasDB(entry);
+  if (result && result.error) {
+    alert('Erro ao guardar: ' + (result.error.message || JSON.stringify(result.error)));
+    return;
+  }
   if (editId) {
     const idx = feriasPlaneadas.findIndex(f=>f.id===editId);
     if (idx>=0) feriasPlaneadas[idx]=entry; else feriasPlaneadas.push(entry);
