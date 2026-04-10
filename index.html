@@ -2276,10 +2276,24 @@ function renderAdmin() {
 
   alertasDiv.innerHTML = alertas.length > 0 ? `<div class="alert-list">${alertas.join('')}</div>` : '';
 
+  // Horas box aberta hoje — based on gym schedule
+  const dowKey = JS_DAY_TO_KEY[new Date().getDay()];
+  const gymDia = gymHorario[dowKey];
+  let boxHorasMs = 0;
+  if (gymDia && gymDia.ativo && gymDia.open && gymDia.close) {
+    const [oh, om] = gymDia.open.split(':').map(Number);
+    const [ch, cm] = gymDia.close.split(':').map(Number);
+    boxHorasMs = ((ch*60+cm) - (oh*60+om)) * 60000;
+  }
+  const boxLabel = boxHorasMs > 0
+    ? formatHours(boxHorasMs)
+    : '—';
+
   document.getElementById('stats-row').innerHTML =
     statCard('Presentes Agora', present, true) +
     statCard('Total Equipa', coaches.length) +
-    statCard('Horas Hoje', formatHours(totalMs)) +
+    statCard('Box Aberta Hoje', boxLabel) +
+    statCard('Staff Trabalhou', formatHours(totalMs)) +
     statCard('Registos Hoje', todayRecs.length);
 
   const tbody = document.getElementById('records-body');
