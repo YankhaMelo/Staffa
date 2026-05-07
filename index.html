@@ -1346,6 +1346,14 @@ tr:hover td { background:#141414; }
   </div>
 </div>
 
+<!-- MODAL: RESUMO MENSAL COLABORADOR -->
+<div class="modal-overlay" id="coach-month-modal">
+  <div class="modal modal-wide" style="max-width:560px;text-align:left;max-height:90vh;overflow-y:auto">
+    <button class="modal-close" onclick="closeModal('coach-month-modal')">✕</button>
+    <div id="coach-month-content"></div>
+  </div>
+</div>
+
 <!-- MODAL: PIN -->
 <div class="modal-overlay" id="pin-modal">
   <div class="modal" style="max-width:340px">
@@ -1879,7 +1887,7 @@ function renderMonthly(){
   const active=[...new Set(mRecs.map(r=>r.coachId))].length;
   let html=`<div class="stats-row" style="margin-bottom:24px">${statCard('Dias com Registos',days)}${statCard('Total Horas Mês',formatHours(totalMs),true)}${statCard('Colaboradores Ativos',active)}</div>`;
   html+=`<div class="section-title">Resumo por Colaborador</div><div class="table-wrap" style="margin-bottom:28px"><table><thead><tr><th>Colaborador</th><th>Horas</th><th>Dias</th><th>Média/Dia</th><th>Faltas</th></tr></thead><tbody>`;
-  coaches.forEach(c=>{const cRecs=mRecs.filter(r=>r.coachId===c.id);if(cRecs.length===0)return;const cMs=cRecs.reduce((a,r)=>a+calcMs(r.entry,r.exit),0);const cDays=[...new Set(cRecs.map(r=>r.date))].length;const cFaltas=faltas.filter(f=>f.coachId===c.id&&f.date.startsWith(ms));html+=`<tr><td><strong>${c.name}</strong><br><span style="font-size:.75rem;color:var(--muted)">${c.role}</span></td><td style="font-family:'DM Mono',monospace;color:var(--accent)">${formatHours(cMs)}</td><td style="font-family:'DM Mono',monospace">${cDays}</td><td style="font-family:'DM Mono',monospace">${formatHours(cDays>0?cMs/cDays:0)}</td><td>${cFaltas.length>0?'<span class="badge badge-danger">'+cFaltas.length+'</span>':'<span class="badge badge-out">0</span>'}</td></tr>`;});
+  coaches.forEach(c=>{const cRecs=mRecs.filter(r=>r.coachId===c.id);if(cRecs.length===0)return;const cMs=cRecs.reduce((a,r)=>a+calcMs(r.entry,r.exit),0);const cDays=[...new Set(cRecs.map(r=>r.date))].length;const cFaltas=faltas.filter(f=>f.coachId===c.id&&f.date.startsWith(ms));html+=`<tr><td style="cursor:pointer" onclick="openCoachMonthSummary('${c.id}','${ms}')"><strong style="color:var(--accent);text-decoration:underline;text-underline-offset:3px">${c.name}</strong><br><span style="font-size:.75rem;color:var(--muted)">${c.role}</span></td><td style="font-family:'DM Mono',monospace;color:var(--accent)">${formatHours(cMs)}</td><td style="font-family:'DM Mono',monospace">${cDays}</td><td style="font-family:'DM Mono',monospace">${formatHours(cDays>0?cMs/cDays:0)}</td><td>${cFaltas.length>0?'<span class="badge badge-danger">'+cFaltas.length+'</span>':'<span class="badge badge-out">0</span>'}</td></tr>`;});
   html+='</tbody></table></div><div class="section-title">Detalhe por Dia</div>';
   Object.keys(byDay).sort().reverse().forEach(day=>{const dayRecs=byDay[day];let dayMs=0;dayRecs.forEach(r=>{dayMs+=calcMs(r.entry,r.exit);});const dateObj=new Date(day+'T12:00:00');const dateStr=dateObj.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'});const weekday=dateObj.toLocaleDateString('pt-PT',{weekday:'long'});const uid='day-'+day;const byCoachDay={};dayRecs.forEach(r=>{if(!byCoachDay[r.coachId])byCoachDay[r.coachId]=[];byCoachDay[r.coachId].push(r);});
   html+=`<div class="monthly-card"><div class="monthly-card-header" onclick="toggleDay('${uid}')"><div><div class="mc-name">${dateStr}</div><div class="mc-role" style="text-transform:capitalize">${weekday}</div></div><div class="mc-right"><div class="mc-total">${formatHours(dayMs)}</div><div class="mc-days">${Object.keys(byCoachDay).length} colaborador${Object.keys(byCoachDay).length!==1?'es':''}</div></div><div class="mc-chevron" id="chev-${uid}">▼</div></div><div class="monthly-detail" id="${uid}"><table><thead><tr><th>Colaborador</th><th>Turno</th><th>Entrada</th><th>Saída</th><th>H. Turno</th><th>Total Dia</th></tr></thead><tbody>`;
@@ -1888,6 +1896,101 @@ function renderMonthly(){
   container.innerHTML=html;
 }
 function toggleDay(uid){document.getElementById(uid).classList.toggle('open');document.getElementById('chev-'+uid).classList.toggle('open');}
+
+// ── RESUMO MENSAL INDIVIDUAL ──
+async function openCoachMonthSummary(coachId, ms){
+  const coach=coaches.find(c=>c.id===coachId);
+  if(!coach)return;
+  const today=todayStr();
+  const cutoff=today.startsWith(ms)?today:(ms+'-31'); // até hoje ou fim do mês
+  const mRecs=records.filter(r=>r.coachId===coachId&&r.date&&r.date.startsWith(ms)&&r.date<=cutoff&&r.exit);
+  const mFaltas=faltas.filter(f=>f.coachId===coachId&&f.date.startsWith(ms));
+  const mFerias=feriasPlaneadas.filter(f=>f.coachId===coachId&&f.inicio.startsWith(ms));
+  let totalMs=0;mRecs.forEach(r=>totalMs+=calcMs(r.entry,r.exit));
+  const dias=[...new Set(mRecs.map(r=>r.date))].length;
+  const avgMs=dias>0?totalMs/dias:0;
+  const baseHoras=Math.floor(totalMs/3600000);
+  const baseValor=coach.valorHora?baseHoras*coach.valorHora:null;
+  const mesLabel=MONTHS_PT[parseInt(ms.split('-')[1])-1]+' '+ms.split('-')[0];
+  const isMesAtual=today.startsWith(ms);
+
+  // Load extras
+  let extrasDB=[];
+  try{
+    const url=SUPABASE_URL+'/rest/v1/extras?select=*&gym_id=eq.'+GYM_ID+'&coach_id=eq.'+coachId+'&mes=eq.'+ms+'&apikey='+SUPABASE_ANON;
+    const res=await fetch(url,{headers:{'Authorization':'Bearer '+SUPABASE_ANON}});
+    if(res.ok)extrasDB=await res.json();
+  }catch(e){}
+  const extrasTotal=extrasDB.reduce((a,e)=>a+(parseFloat(e.valor_euros)||0),0);
+  const totalPagar=baseValor!=null?baseValor+extrasTotal:null;
+
+  const scoreColor=v=>v>=80?'var(--success)':v>=60?'var(--accent)':'var(--danger)';
+
+  let html=`
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+    <div style="width:52px;height:52px;border-radius:50%;background:var(--accent);color:#000;font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;display:flex;align-items:center;justify-content:center;flex-shrink:0">${coach.foto?`<img src="${coach.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`:initials(coach.name)}</div>
+    <div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.4rem;font-weight:900;text-transform:uppercase">${coach.name}</div>
+      <div style="font-size:.8rem;color:var(--muted)">${coach.role} · ${mesLabel}${isMesAtual?' <span style="background:rgba(255,214,0,.15);color:var(--accent);font-size:.65rem;padding:2px 8px;border-radius:10px;font-family:\'DM Mono\',monospace">ATÉ HOJE</span>':''}</div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px">
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:14px;text-align:center">
+      <div style="font-size:.62rem;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">Horas</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.6rem;font-weight:900;color:var(--accent)">${formatHours(totalMs)}</div>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:14px;text-align:center">
+      <div style="font-size:.62rem;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">Dias</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.6rem;font-weight:900">${dias}</div>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:14px;text-align:center">
+      <div style="font-size:.62rem;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">Média/Dia</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.6rem;font-weight:900">${formatHours(avgMs)}</div>
+    </div>
+  </div>`;
+
+  // Faltas
+  if(mFaltas.length>0||mFerias.length>0){
+    html+=`<div style="font-family:'Barlow Condensed',sans-serif;font-size:.75rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px">Ausências <span style="flex:1;height:1px;background:var(--border);display:block"></span></div>`;
+    mFaltas.forEach(f=>{
+      const dStr=new Date(f.date+'T12:00:00').toLocaleDateString('pt-PT',{weekday:'short',day:'2-digit',month:'2-digit'});
+      html+=`<div style="display:flex;justify-content:space-between;padding:8px 12px;background:rgba(255,59,59,.06);border:1px solid rgba(255,59,59,.2);border-radius:8px;margin-bottom:6px;font-size:.84rem"><span>${dStr}</span><span class="badge badge-danger">${FALTA_TIPOS[f.tipo]||f.tipo}</span></div>`;
+    });
+    mFerias.forEach(f=>{
+      html+=`<div style="display:flex;justify-content:space-between;padding:8px 12px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:8px;margin-bottom:6px;font-size:.84rem"><span>${f.inicio} → ${f.fim}</span><span class="badge badge-success">${FERIAS_TIPOS[f.tipo]||f.tipo}</span></div>`;
+    });
+  }
+
+  // Extras
+  if(extrasDB.length>0){
+    html+=`<div style="font-family:'Barlow Condensed',sans-serif;font-size:.75rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:14px 0 10px;display:flex;align-items:center;gap:8px">Extras <span style="flex:1;height:1px;background:var(--border);display:block"></span></div>`;
+    extrasDB.forEach(e=>{
+      html+=`<div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:.84rem"><span>${e.descricao}</span><span style="color:var(--success);font-family:'DM Mono',monospace;font-weight:700">+${parseFloat(e.valor_euros).toFixed(2)} €</span></div>`;
+    });
+  }
+
+  // Financeiro
+  if(totalPagar!=null){
+    html+=`<div style="background:var(--surface2);border:2px solid var(--accent);border-radius:10px;padding:16px;margin-top:16px">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">💰 Resumo Financeiro</div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:.85rem"><span style="color:var(--muted)">Horas base (${baseHoras}h × ${coach.valorHora}€/h)</span><span style="font-family:'DM Mono',monospace">${baseValor.toFixed(2)} €</span></div>
+      ${extrasTotal>0?`<div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:.85rem"><span style="color:var(--muted)">Extras</span><span style="color:var(--success);font-family:'DM Mono',monospace">+${extrasTotal.toFixed(2)} €</span></div>`:''}
+      <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-family:'Barlow Condensed',sans-serif;font-size:.9rem;font-weight:900;text-transform:uppercase">Total a Pagar</span>
+        <span style="font-family:'Barlow Condensed',sans-serif;font-size:1.6rem;font-weight:900;color:var(--accent)">${totalPagar.toFixed(2)} €</span>
+      </div>
+    </div>`;
+  }
+
+  html+=`<div style="display:flex;gap:8px;margin-top:16px">
+    <button onclick="openExportModal('${coachId}');closeModal('coach-month-modal')" class="btn-scan" style="flex:1;margin-bottom:0">📄 Exportar PDF/Excel</button>
+    <button onclick="closeModal('coach-month-modal')" class="btn-secondary" style="flex:1">Fechar</button>
+  </div>`;
+
+  document.getElementById('coach-month-content').innerHTML=html;
+  document.getElementById('coach-month-modal').classList.add('open');
+}
 
 // ══════════════════════════════════════════════════
 // DASHBOARD
@@ -2152,6 +2255,21 @@ function exportPDF(coach,byDay,totalMs,normalMs,subMs,days,monthLabel,sigData,ex
     doc.autoTable({startY:afterY,head:[['Descrição','Tipo','Qtd','Valor']],body:extrasRows,styles:{fontSize:9,cellPadding:3},headStyles:{fillColor:[30,30,30],textColor:[255,214,0],fontStyle:'bold'},alternateRowStyles:{fillColor:[250,250,250]},columnStyles:{0:{cellWidth:82},1:{cellWidth:30},2:{cellWidth:22},3:{cellWidth:32}},margin:{left:14,right:14},didParseCell:function(data){if(data.row.index===extrasRows.length-1){data.cell.styles.fillColor=[20,80,40];data.cell.styles.textColor=[100,255,150];data.cell.styles.fontStyle='bold';}}});
     afterY=doc.lastAutoTable.finalY+10;
     if(coach.valorHora){const baseValor=baseHoras*coach.valorHora;const totalGeral=baseValor+extrasTotal;doc.setFillColor(0,0,0);doc.roundedRect(14,afterY,182,14,2,2,'F');doc.setFillColor(255,214,0);doc.rect(14,afterY,182,2,'F');doc.setTextColor(150,150,150);doc.setFontSize(7);doc.setFont('helvetica','normal');doc.text('Horas Base: '+baseHoras+'h x '+coach.valorHora.toFixed(2)+'EUR/h = '+baseValor.toFixed(2)+'EUR',18,afterY+7);doc.setTextColor(100,200,100);doc.text('Extras: +'+extrasTotal.toFixed(2)+'EUR  |  Total: '+totalGeral.toFixed(2)+' EUR',18,afterY+11);}
+  }
+
+  // FALTAS TABLE in PDF
+  const ms=currentYear+'-'+String(currentMonth+1).padStart(2,'0');
+  const mFaltas=faltas.filter(f=>f.coachId===exportCoachId&&f.date.startsWith(ms));
+  if(mFaltas.length>0){
+    if(afterY>250){doc.addPage();afterY=20;}
+    doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(0,0,0);doc.text('FALTAS / AUSÊNCIAS',14,afterY);doc.setFillColor(255,59,59);doc.rect(14,afterY+2,50,0.8,'F');afterY+=8;
+    const faltasRows=mFaltas.sort((a,b)=>a.date.localeCompare(b.date)).map(f=>{
+      const dStr=new Date(f.date+'T12:00:00').toLocaleDateString('pt-PT',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'});
+      const tipoStr={injustificada:'Injustificada',justificada:'Justificada',doenca:'Doença',ferias:'Férias',folga:'Folga',saida_antecipada:'Saída Antecipada'}[f.tipo]||f.tipo;
+      return[dStr,tipoStr,f.obs||'–'];
+    });
+    doc.autoTable({startY:afterY,head:[['Data','Tipo','Observação']],body:faltasRows,styles:{fontSize:8.5,cellPadding:3},headStyles:{fillColor:[80,0,0],textColor:[255,200,200],fontStyle:'bold'},alternateRowStyles:{fillColor:[255,250,250]},columnStyles:{0:{cellWidth:40},1:{cellWidth:40},2:{cellWidth:100}},margin:{left:14,right:14}});
+    afterY=doc.lastAutoTable.finalY+10;
   }
 
   // Signature
