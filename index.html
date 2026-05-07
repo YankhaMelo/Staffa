@@ -1147,6 +1147,7 @@ tr:hover td { background:#141414; }
           </div>
         </div>
         <button onclick="addExtra()" style="margin-top:12px;width:100%;padding:10px;background:var(--accent);color:#000;border:none;border-radius:8px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:.95rem;text-transform:uppercase;cursor:pointer">+ Adicionar Extra</button>
+        <button onclick="saveExtrasDB()" style="margin-top:8px;width:100%;padding:10px;background:var(--success);color:#fff;border:none;border-radius:8px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:.95rem;text-transform:uppercase;cursor:pointer">💾 Guardar Extras</button>
         <div class="extra-total-row" id="extras-total-row" style="display:none">
           <div class="extra-total-label">Total Extras</div>
           <div class="extra-total-val" id="extras-total-val">0.00 €</div>
@@ -2022,7 +2023,7 @@ function renderExtrasSummary(){
 // ══════════════════════════════════════════════════
 // EXPORT
 // ══════════════════════════════════════════════════
-function openExportModal(coachId){
+async function openExportModal(coachId){
   exportCoachId=coachId; currentExtras=[];
   const coach=coaches.find(c=>c.id===coachId);
   document.getElementById('exp-name').textContent=coach.name;
@@ -2032,9 +2033,47 @@ function openExportModal(coachId){
   document.getElementById('exp-tab-extras').classList.remove('active');
   document.getElementById('exp-pane-base').style.display='block';
   document.getElementById('exp-pane-extras').style.display='none';
+  // Load extras from DB
+  await loadExtrasFromDB(coachId);
   renderExtrasList();
+  renderExtrasSummary();
   document.getElementById('export-modal').classList.add('open');
   setTimeout(initSig,100);
+}
+
+async function loadExtrasFromDB(coachId){
+  const mes=currentYear+'-'+String(currentMonth+1).padStart(2,'0');
+  try {
+    const url=SUPABASE_URL+'/rest/v1/extras?select=*&gym_id=eq.'+GYM_ID+'&coach_id=eq.'+coachId+'&mes=eq.'+mes+'&apikey='+SUPABASE_ANON;
+    const res=await fetch(url,{headers:{'Authorization':'Bearer '+SUPABASE_ANON}});
+    if(!res.ok)return;
+    const data=await res.json();
+    currentExtras=(data||[]).map(e=>({id:e.id,desc:e.descricao,tipo:e.tipo,val:e.val,valorEuros:e.valor_euros}));
+  } catch(e){console.error('Erro ao carregar extras:',e);}
+}
+
+async function saveExtrasDB(){
+  const coachId=exportCoachId;
+  const mes=currentYear+'-'+String(currentMonth+1).padStart(2,'0');
+  showNetStatus('saving','⏳ A guardar extras...');
+  try {
+    // Delete existing extras for this coach/month
+    await fetch(SUPABASE_URL+'/rest/v1/extras?gym_id=eq.'+GYM_ID+'&coach_id=eq.'+coachId+'&mes=eq.'+mes,{
+      method:'DELETE',headers:{'Authorization':'Bearer '+SUPABASE_ANON,'apikey':SUPABASE_ANON}
+    });
+    // Insert new extras
+    if(currentExtras.length>0){
+      const rows=currentExtras.map(e=>({gym_id:GYM_ID,coach_id:coachId,mes,descricao:e.desc,tipo:e.tipo,val:e.val,valor_euros:e.valorEuros}));
+      await fetch(SUPABASE_URL+'/rest/v1/extras',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+SUPABASE_ANON,'apikey':SUPABASE_ANON,'Content-Type':'application/json','Prefer':'return=representation'},
+        body:JSON.stringify(rows)
+      });
+    }
+    showNetStatus('saved','✅ Extras guardados!');
+    setTimeout(hideNetStatus,2000);
+    showToast('💾','Extras Guardados!','Os extras de '+MONTHS_PT[currentMonth]+' ficaram gravados.','success',4000);
+  } catch(e){showNetStatus('offline','❌ Erro ao guardar');console.error(e);}
 }
 function initSig(){sigCanvas=document.getElementById('sig-canvas');sigCtx=sigCanvas.getContext('2d');sigCanvas.width=sigCanvas.offsetWidth;sigCanvas.height=150;sigCtx.fillStyle='#fff';sigCtx.fillRect(0,0,sigCanvas.width,sigCanvas.height);sigCtx.strokeStyle='#000';sigCtx.lineWidth=2;sigCtx.lineCap='round';const pos=e=>{const r=sigCanvas.getBoundingClientRect(),t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top};};sigCanvas.onmousedown=sigCanvas.ontouchstart=e=>{e.preventDefault();sigDrawing=true;const p=pos(e);sigCtx.beginPath();sigCtx.moveTo(p.x,p.y);};sigCanvas.onmousemove=sigCanvas.ontouchmove=e=>{e.preventDefault();if(!sigDrawing)return;const p=pos(e);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();};sigCanvas.onmouseup=sigCanvas.ontouchend=()=>{sigDrawing=false;};}
 function clearSig(){if(!sigCtx)return;sigCtx.fillStyle='#fff';sigCtx.fillRect(0,0,sigCanvas.width,sigCanvas.height);}
@@ -2310,7 +2349,107 @@ const evoCtx=document.getElementById('chart-aval-evo');if(evoCtx){if(avalCharts.
 const detailDiv=document.getElementById('aval-sec-detail');if(detailDiv){detailDiv.innerHTML=secKeys.map((k,i)=>{const sc=avgScores[i];const color=sc>=80?'#22c55e':sc>=60?'#FFD600':'#ff3b3b';const SECS_items=AVAL_SECTIONS[k]?.items||[];const naoCount=SECS_items.map((q,qi)=>({q,count:allAvals.filter(a=>a.sections?.[k]?.items?.[qi]==='nao').length})).sort((a,b)=>b.count-a.count);const worst=naoCount[0];return`<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px"><div style="font-size:.82rem;font-weight:600">${AVAL_SECTIONS[k]?.icon} ${AVAL_SECTIONS[k]?.label}</div><div style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:900;color:${color}">${sc}%</div></div><div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden"><div style="height:100%;border-radius:4px;width:${sc}%;background:${color};transition:width .6s ease"></div></div>${worst&&worst.count>0?`<div style="font-size:.72rem;color:var(--muted);margin-top:4px;font-family:'DM Mono',monospace">⚠ Ponto a melhorar: ${worst.q.substring(0,60)}${worst.q.length>60?'…':''} (${worst.count}× não realizado)</div>`:''}</div>`;}).join('');}
 },100);}
 
-function exportAvaliacaoPDF(avalId){let st=AVAL_STATE,avaliador=document.getElementById('aval-avaliador').value||'–';let tipoAula=document.getElementById('aval-tipo-aula').value,nAlunos=document.getElementById('aval-n-alunos').value||'–';let trainee=document.getElementById('aval-trainee').value||'–',feedbackDt=document.getElementById('aval-feedback-dt').value||'–';let score=calcAvalScore();if(avalId){const a=avaliacoes.find(x=>x.id===avalId);if(!a)return;st=a.sections;avaliador=a.avaliador;tipoAula=a.tipoAula;nAlunos=a.nAlunos;trainee=a.trainee||'–';feedbackDt=a.feedbackDt||'–';score=a.score;}const coach=coaches.find(c=>c.id===currentAvalCoachId);const dataStr=new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'});const{jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});const sc=score>=80?[34,197,94]:score>=60?[255,214,0]:[255,59,59];doc.setFillColor(0,0,0);doc.rect(0,0,210,22,'F');doc.setFillColor(...sc);doc.rect(0,21,210,2,'F');doc.setTextColor(255,214,0);doc.setFontSize(14);doc.setFont('helvetica','bold');doc.text('5.7CROSSFIT',14,14);doc.setTextColor(180,180,180);doc.setFontSize(9);doc.setFont('helvetica','normal');doc.text('Ficha de Avaliação de Aula',196,14,{align:'right'});doc.setTextColor(0,0,0);doc.setFontSize(15);doc.setFont('helvetica','bold');doc.text(coach?.name||'–',14,34);doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(120,120,120);doc.text(coach?.role||'',14,40);[['Avaliador',avaliador],['Tipo de Aula',tipoAula],['Nº Alunos',String(nAlunos)],['Trainee/Sombra',trainee],['Data Feedback',String(feedbackDt).replace('T',' ')],['Gerado em',dataStr]].forEach((m,i)=>{const x=14+(i%3)*66,y=46+(Math.floor(i/3)*12);doc.setTextColor(160,160,160);doc.setFontSize(6.5);doc.text(m[0].toUpperCase(),x,y);doc.setTextColor(0,0,0);doc.setFontSize(8);doc.setFont('helvetica','bold');doc.text(String(m[1]),x,y+5);doc.setFont('helvetica','normal');});doc.setFillColor(...sc);doc.roundedRect(162,26,34,26,3,3,'F');doc.setTextColor(0,0,0);doc.setFontSize(7);doc.setFont('helvetica','bold');doc.text('SCORE',179,33,{align:'center'});doc.setFontSize(18);doc.text(score+'%',179,43,{align:'center'});let y=76;Object.keys(AVAL_SECTIONS).forEach(sec=>{const sd=AVAL_SECTIONS[sec],s=st[sec];if(!s)return;if(y>248){doc.addPage();y=20;}doc.setFillColor(15,15,15);doc.rect(14,y,182,8,'F');doc.setFillColor(...sc);doc.rect(14,y,3,8,'F');doc.setTextColor(255,255,255);doc.setFontSize(8);doc.setFont('helvetica','bold');doc.text(sd.label.toUpperCase(),20,y+5.5);if(s.nota>0){doc.setTextColor(255,214,0);doc.text('Nota: '+s.nota+'/5',192,y+5.5,{align:'right'});}y+=10;const rows=sd.items.map((q,i)=>[String(i+1),q,s.items[i]==='sim'?'✓ Realizado':s.items[i]==='nao'?'✗ Não realizado':'– Sem registo']);doc.autoTable({startY:y,body:rows,styles:{fontSize:7.5,cellPadding:2.5},columnStyles:{0:{cellWidth:8,halign:'center',textColor:[160,160,160]},1:{cellWidth:140},2:{cellWidth:34}},margin:{left:14,right:14},theme:'plain',alternateRowStyles:{fillColor:[248,248,248]},didParseCell:function(data){if(data.column.index===2){const v=s.items[data.row.index];data.cell.styles.textColor=v==='sim'?[34,140,70]:v==='nao'?[200,50,50]:[150,150,150];data.cell.styles.fontStyle='bold';}}});y=doc.lastAutoTable.finalY;if(s.melhorar){doc.setFillColor(250,248,220);doc.roundedRect(14,y+2,182,12,2,2,'F');doc.setTextColor(120,100,0);doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.text('A MELHORAR:',18,y+7);doc.setFont('helvetica','normal');doc.setTextColor(80,70,0);doc.text(doc.splitTextToSize(s.melhorar,148)[0]||'',46,y+7);y+=16;}else{y+=4;}});if(st.geral?.obs||st.geral?.nota>0){if(y>230){doc.addPage();y=20;}doc.setFillColor(0,0,0);doc.rect(14,y,182,8,'F');doc.setFillColor(...sc);doc.rect(14,y,3,8,'F');doc.setTextColor(255,255,255);doc.setFontSize(8);doc.setFont('helvetica','bold');doc.text('AVALIAÇÃO GERAL',20,y+5.5);if(st.geral.nota>0){doc.setTextColor(255,214,0);doc.text('Nota: '+st.geral.nota+'/5',192,y+5.5,{align:'right'});}y+=12;if(st.geral.obs){doc.setTextColor(60,60,60);doc.setFontSize(8);doc.setFont('helvetica','normal');const lines=doc.splitTextToSize(st.geral.obs,178);doc.text(lines,14,y);y+=lines.length*5+6;}}const sigY=Math.max(y+10,256);doc.setDrawColor(180,180,180);doc.line(14,sigY,94,sigY);doc.line(116,sigY,196,sigY);doc.setTextColor(120,120,120);doc.setFontSize(7);doc.text('Assinatura Avaliador',14,sigY+4);doc.text(avaliador,14,sigY+9);doc.text('Assinatura Coach',116,sigY+4);doc.text(coach?.name||'',116,sigY+9);doc.setFillColor(0,0,0);doc.rect(0,285,210,12,'F');doc.setTextColor(80,80,80);doc.setFontSize(7);doc.setFont('helvetica','normal');doc.text('5.7CrossFit · Ficha de Avaliação · '+dataStr,14,292);doc.text('Score: '+score+'%',196,292,{align:'right'});doc.save('57CF_Avaliacao_'+(coach?.name||'coach').replace(/ /g,'_')+'_'+dataStr.replace(/\//g,'-')+'.pdf');}
+function exportAvaliacaoPDF(avalId){
+  let st=AVAL_STATE,avaliador=document.getElementById('aval-avaliador').value||'–';
+  let tipoAula=document.getElementById('aval-tipo-aula').value,nAlunos=document.getElementById('aval-n-alunos').value||'–';
+  let trainee=document.getElementById('aval-trainee').value||'–',feedbackDt=document.getElementById('aval-feedback-dt').value||'–';
+  let score=calcAvalScore();
+  if(avalId){const a=avaliacoes.find(x=>x.id===avalId);if(!a)return;st=a.sections;avaliador=a.avaliador;tipoAula=a.tipoAula;nAlunos=a.nAlunos;trainee=a.trainee||'–';feedbackDt=a.feedbackDt||'–';score=a.score;}
+  const coach=coaches.find(c=>c.id===currentAvalCoachId);
+  const dataStr=new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const sc=score>=80?[34,197,94]:score>=60?[255,214,0]:[255,59,59];
+
+  // ── HEADER ──
+  doc.setFillColor(0,0,0);doc.rect(0,0,210,22,'F');
+  doc.setFillColor(...sc);doc.rect(0,21,210,2,'F');
+  doc.setTextColor(255,214,0);doc.setFontSize(14);doc.setFont('helvetica','bold');doc.text('5.7CROSSFIT',14,14);
+  doc.setTextColor(180,180,180);doc.setFontSize(9);doc.setFont('helvetica','normal');doc.text('Ficha de Avaliação de Aula',196,14,{align:'right'});
+  doc.setTextColor(0,0,0);doc.setFontSize(15);doc.setFont('helvetica','bold');doc.text(coach?.name||'–',14,34);
+  doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(120,120,120);doc.text(coach?.role||'',14,40);
+  [['Avaliador',avaliador],['Tipo de Aula',tipoAula],['Nº Alunos',String(nAlunos)],['Trainee/Sombra',trainee],['Data Feedback',String(feedbackDt).replace('T',' ')],['Gerado em',dataStr]].forEach((m,i)=>{
+    const x=14+(i%3)*66,y=46+(Math.floor(i/3)*12);
+    doc.setTextColor(160,160,160);doc.setFontSize(6.5);doc.text(m[0].toUpperCase(),x,y);
+    doc.setTextColor(0,0,0);doc.setFontSize(8);doc.setFont('helvetica','bold');doc.text(String(m[1]),x,y+5);doc.setFont('helvetica','normal');
+  });
+  doc.setFillColor(...sc);doc.roundedRect(162,26,34,26,3,3,'F');
+  doc.setTextColor(0,0,0);doc.setFontSize(7);doc.setFont('helvetica','bold');doc.text('SCORE',179,33,{align:'center'});
+  doc.setFontSize(18);doc.text(score+'%',179,43,{align:'center'});
+
+  // ── GRÁFICO DE BARRAS POR SECÇÃO ──
+  const secKeys=Object.keys(AVAL_SECTIONS);
+  const secScores=secKeys.map(k=>{
+    const s=st[k];if(!s)return 0;
+    let earned=0;(s.items||[]).forEach(v=>{if(v==='sim')earned++;else if(v==='sr')earned+=0.5;});
+    const iP=s.items?.length>0?(earned/s.items.length)*100:0;
+    const nP=s.nota>0?(s.nota/5)*100:null;
+    return Math.round(nP!==null?iP*0.6+nP*0.4:iP);
+  });
+  const SCOLORS={briefing:[255,214,0],warmup:[249,115,22],skill:[59,130,246],wod:[255,59,59],cooldown:[34,197,94]};
+  const chartY=72;
+  doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(100,100,100);
+  doc.text('PONTUAÇÃO POR SECÇÃO',14,chartY-2);
+  const barW=30,barMaxH=22,barGap=4,barStartX=14;
+  secKeys.forEach((k,i)=>{
+    const x=barStartX+i*(barW+barGap);
+    const pct=secScores[i]/100;
+    const h=Math.max(2,barMaxH*pct);
+    const col=SCOLORS[k]||[150,150,150];
+    // Background bar
+    doc.setFillColor(30,30,30);doc.roundedRect(x,chartY,barW,barMaxH,2,2,'F');
+    // Filled bar
+    doc.setFillColor(...col);doc.roundedRect(x,chartY+barMaxH-h,barW,h,2,2,'F');
+    // Percentage text
+    doc.setTextColor(...col);doc.setFontSize(8);doc.setFont('helvetica','bold');
+    doc.text(secScores[i]+'%',x+barW/2,chartY+barMaxH+5,{align:'center'});
+    // Label
+    doc.setTextColor(120,120,120);doc.setFontSize(5.5);doc.setFont('helvetica','normal');
+    const label=AVAL_SECTIONS[k]?.label||k;
+    doc.text(label.substring(0,9),x+barW/2,chartY+barMaxH+10,{align:'center'});
+  });
+
+  // ── SECÇÕES DETALHADAS ──
+  let y=chartY+barMaxH+16;
+  Object.keys(AVAL_SECTIONS).forEach(sec=>{
+    const sd=AVAL_SECTIONS[sec],s=st[sec];if(!s)return;
+    if(y>248){doc.addPage();y=20;}
+    doc.setFillColor(15,15,15);doc.rect(14,y,182,8,'F');
+    doc.setFillColor(...(SCOLORS[sec]||[150,150,150]));doc.rect(14,y,3,8,'F');
+    doc.setTextColor(255,255,255);doc.setFontSize(8);doc.setFont('helvetica','bold');
+    doc.text(sd.label.toUpperCase(),20,y+5.5);
+    if(s.nota>0){doc.setTextColor(255,214,0);doc.text('Nota: '+s.nota+'/5',192,y+5.5,{align:'right'});}
+    y+=10;
+    const rows=sd.items.map((q,i)=>[String(i+1),q,s.items[i]==='sim'?'✓ Realizado':s.items[i]==='nao'?'✗ Não realizado':'– Sem registo']);
+    doc.autoTable({startY:y,body:rows,styles:{fontSize:7.5,cellPadding:2.5},columnStyles:{0:{cellWidth:8,halign:'center',textColor:[160,160,160]},1:{cellWidth:140},2:{cellWidth:34}},margin:{left:14,right:14},theme:'plain',alternateRowStyles:{fillColor:[248,248,248]},didParseCell:function(data){if(data.column.index===2){const v=s.items[data.row.index];data.cell.styles.textColor=v==='sim'?[34,140,70]:v==='nao'?[200,50,50]:[150,150,150];data.cell.styles.fontStyle='bold';}}});
+    y=doc.lastAutoTable.finalY;
+    if(s.melhorar){doc.setFillColor(250,248,220);doc.roundedRect(14,y+2,182,12,2,2,'F');doc.setTextColor(120,100,0);doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.text('A MELHORAR:',18,y+7);doc.setFont('helvetica','normal');doc.setTextColor(80,70,0);doc.text(doc.splitTextToSize(s.melhorar,148)[0]||'',46,y+7);y+=16;}else{y+=4;}
+  });
+
+  // ── AVALIAÇÃO GERAL ──
+  if(st.geral?.obs||st.geral?.nota>0){
+    if(y>230){doc.addPage();y=20;}
+    doc.setFillColor(0,0,0);doc.rect(14,y,182,8,'F');doc.setFillColor(...sc);doc.rect(14,y,3,8,'F');
+    doc.setTextColor(255,255,255);doc.setFontSize(8);doc.setFont('helvetica','bold');doc.text('AVALIAÇÃO GERAL',20,y+5.5);
+    if(st.geral.nota>0){doc.setTextColor(255,214,0);doc.text('Nota: '+st.geral.nota+'/5',192,y+5.5,{align:'right'});}
+    y+=12;
+    if(st.geral.obs){doc.setTextColor(60,60,60);doc.setFontSize(8);doc.setFont('helvetica','normal');const lines=doc.splitTextToSize(st.geral.obs,178);doc.text(lines,14,y);y+=lines.length*5+6;}
+  }
+
+  // ── ASSINATURAS ──
+  const sigY=Math.max(y+10,256);
+  doc.setDrawColor(180,180,180);doc.line(14,sigY,94,sigY);doc.line(116,sigY,196,sigY);
+  doc.setTextColor(120,120,120);doc.setFontSize(7);
+  doc.text('Assinatura Avaliador',14,sigY+4);doc.text(avaliador,14,sigY+9);
+  doc.text('Assinatura Coach',116,sigY+4);doc.text(coach?.name||'',116,sigY+9);
+
+  // ── FOOTER ──
+  doc.setFillColor(0,0,0);doc.rect(0,285,210,12,'F');
+  doc.setTextColor(80,80,80);doc.setFontSize(7);doc.setFont('helvetica','normal');
+  doc.text('5.7CrossFit · Ficha de Avaliação · '+dataStr,14,292);
+  doc.text('Score: '+score+'%',196,292,{align:'right'});
+  doc.save('57CF_Avaliacao_'+(coach?.name||'coach').replace(/ /g,'_')+'_'+dataStr.replace(/\//g,'-')+'.pdf');
+}
 
 // ══════════════════════════════════════════════════
 // INIT
@@ -2321,4 +2460,3 @@ window.addEventListener('load', function() {
 </script>
 </body>
 </html>
-
